@@ -1,82 +1,57 @@
 package com.checkout.payment.gateway.model;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import java.io.Serializable;
+import com.checkout.payment.gateway.validation.CardExpiry;
+import com.checkout.payment.gateway.validation.NotExpired;
+import com.checkout.payment.gateway.validation.SupportedCurrency;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 
-public class PostPaymentRequest implements Serializable {
+/**
+ * A merchant's request to charge a card. Fields are boxed so a missing value reaches validation as
+ * {@code null} and is reported as "must not be null" instead of defaulting to zero.
+ */
+@NotExpired
+public record PostPaymentRequest(
+    @Schema(example = "2222405343248877", description = "14-19 digits")
+    @NotBlank @Pattern(regexp = "\\d{14,19}", message = "must be 14-19 digits")
+    String cardNumber,
 
-  @JsonProperty("card_number_last_four")
-  private int cardNumberLastFour;
-  @JsonProperty("expiry_month")
-  private int expiryMonth;
-  @JsonProperty("expiry_year")
-  private int expiryYear;
-  private String currency;
-  private int amount;
-  private int cvv;
+    @Schema(example = "4", description = "1-12")
+    @NotNull @Min(1) @Max(12)
+    Integer expiryMonth,
 
-  public int getCardNumberLastFour() {
-    return cardNumberLastFour;
-  }
+    @Schema(example = "2030", description = "Month and year together must not be in the past")
+    @NotNull
+    Integer expiryYear,
 
-  public void setCardNumberLastFour(int cardNumberLastFour) {
-    this.cardNumberLastFour = cardNumberLastFour;
-  }
+    @Schema(example = "GBP", allowableValues = {"USD", "GBP", "EUR"})
+    @NotBlank @SupportedCurrency
+    String currency,
 
-  public int getExpiryMonth() {
-    return expiryMonth;
-  }
+    @Schema(example = "1050", description = "Minor currency unit, e.g. 1050 = £10.50")
+    @NotNull @Positive
+    Long amount,
 
-  public void setExpiryMonth(int expiryMonth) {
-    this.expiryMonth = expiryMonth;
-  }
+    @Schema(example = "123", description = "3-4 digits")
+    @NotBlank @Pattern(regexp = "\\d{3,4}", message = "must be 3-4 digits")
+    String cvv) implements CardExpiry {
 
-  public int getExpiryYear() {
-    return expiryYear;
-  }
-
-  public void setExpiryYear(int expiryYear) {
-    this.expiryYear = expiryYear;
-  }
-
-  public String getCurrency() {
-    return currency;
-  }
-
-  public void setCurrency(String currency) {
-    this.currency = currency;
-  }
-
-  public int getAmount() {
-    return amount;
-  }
-
-  public void setAmount(int amount) {
-    this.amount = amount;
-  }
-
-  public int getCvv() {
-    return cvv;
-  }
-
-  public void setCvv(int cvv) {
-    this.cvv = cvv;
-  }
-
-  @JsonProperty("expiry_date")
-  public String getExpiryDate() {
-    return String.format("%d/%d", expiryMonth, expiryYear);
+  /**
+   * Only call on a request that passed validation.
+   */
+  public PaymentCommand toCommand() {
+    return new PaymentCommand(cardNumber, expiryMonth, expiryYear, currency, amount, cvv);
   }
 
   @Override
   public String toString() {
-    return "PostPaymentRequest{" +
-        "cardNumberLastFour=" + cardNumberLastFour +
-        ", expiryMonth=" + expiryMonth +
-        ", expiryYear=" + expiryYear +
-        ", currency='" + currency + '\'' +
-        ", amount=" + amount +
-        ", cvv=" + cvv +
-        '}';
+    return "PostPaymentRequest[cardNumber=****, expiryMonth=" + expiryMonth
+        + ", expiryYear=" + expiryYear + ", currency=" + currency + ", amount=" + amount
+        + ", cvv=***]";
   }
 }

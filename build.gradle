@@ -1,14 +1,17 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.1.5'
-    id 'io.spring.dependency-management' version '1.0.15.RELEASE'
+    id 'jacoco'
+    id 'org.springframework.boot' version '4.1.2'
+    id 'io.spring.dependency-management' version '1.1.7'
 }
 
 group = 'com.checkout'
 version = '0.0.1-SNAPSHOT'
 
-java {
-    sourceCompatibility = '17'
+// Java 17, as the challenge skeleton requires. Builds with any JDK from 17 up; `release` makes the
+// compiler reject APIs newer than 17.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
 }
 
 repositories {
@@ -16,12 +19,54 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.springframework.boot:spring-boot-starter-webclient'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-opentelemetry'
+    implementation 'org.springdoc:springdoc-openapi-starter-webflux-ui:3.2.0'
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-opentelemetry-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.wiremock:wiremock-standalone:3.13.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-tasks.named('test') {
+// Only the Spring Boot fat jar is needed, not the plain jar.
+tasks.named('jar') {
+    enabled = false
+}
+
+tasks.withType(Test).configureEach {
     useJUnitPlatform()
+}
+
+// Unit, slice and component tests (*Test) need no Docker.
+tasks.named('test') {
+    exclude '**/*IT.class'
+}
+
+// End-to-end tests (*IT) run against the real bank simulator in Docker.
+def integrationTest = tasks.register('integrationTest', Test) {
+    description = 'Runs the end-to-end tests against the bank simulator (needs Docker).'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/*IT.class'
+    shouldRunAfter tasks.named('test')
+}
+
+tasks.named('jacocoTestReport') {
+    mustRunAfter tasks.named('test'), integrationTest
+    // Report on whichever test tasks ran.
+    executionData.setFrom(fileTree(layout.buildDirectory).include('jacoco/*.exec'))
+}
+
+tasks.named('check') {
+    dependsOn integrationTest, tasks.named('jacocoTestReport')
 }

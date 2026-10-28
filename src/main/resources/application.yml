@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: payment-gateway
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    deserialization:
+      # Reject 10.5 for an integer amount instead of silently truncating it to 10.
+      accept-float-as-int: false
+  reactor:
+    # Carries the trace context (and so traceId/spanId in logs) across Reactor thread hops.
+    context-propagation: auto
+
+server:
+  # The bank simulator already uses 8080.
+  port: 8090
+
+bank:
+  base-url: http://localhost:8080
+  connect-timeout: 2s
+  response-timeout: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        # Latency histograms, so dashboards and alerts can use percentiles (p99), not just averages.
+        http.client.requests: true
+        http.server.requests: true
+  tracing:
+    sampling:
+      # Trace every request; a high-traffic deployment would lower this.
+      probability: 1.0
+  otlp:
+    metrics:
+      export:
+        # Metrics are pulled from /actuator/prometheus. Pushing over OTLP is switched on by the
+        # observability compose overlay, which also sets the endpoints.
+        enabled: false
+
+springdoc:
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+  api-docs:
+    enabled: true

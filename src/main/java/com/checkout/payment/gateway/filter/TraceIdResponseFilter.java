@@ -1,0 +1,34 @@
+package com.checkout.payment.gateway.filter;
+
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Mono;
+
+/**
+ * Returns the trace id in an {@code X-Trace-Id} header, so a merchant reporting a problem can hand
+ * us the id that finds the request's logs and trace.
+ */
+@Component
+public class TraceIdResponseFilter implements WebFilter {
+
+  static final String TRACE_ID_HEADER = "X-Trace-Id";
+
+  private final Tracer tracer;
+
+  public TraceIdResponseFilter(Tracer tracer) {
+    this.tracer = tracer;
+  }
+
+  @Override
+  public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+    Span span = tracer.currentSpan();
+    if (span != null) {
+      exchange.getResponse().getHeaders().set(TRACE_ID_HEADER, span.context().traceId());
+    }
+    return chain.filter(exchange);
+  }
+}

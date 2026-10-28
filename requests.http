@@ -1,0 +1,81 @@
+### One request per outcome. Start everything with `docker compose up --build`, then run these
+### from IntelliJ (or VS Code with the REST Client extension).
+### The bank simulator decides by the card's last digit: odd = Authorized, even = Declined,
+### 0 = bank error.
+
+@gateway = http://localhost:8090
+
+### Authorized (201), and remember the id for the GET below
+POST {{gateway}}/v1/payments
+Content-Type: application/json
+
+{
+  "card_number": "2222405343248877",
+  "expiry_month": 4,
+  "expiry_year": 2030,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+> {% client.global.set("paymentId", response.body.id); %}
+
+### Retrieve the payment above (200)
+GET {{gateway}}/v1/payments/{{paymentId}}
+
+### Declined (201)
+POST {{gateway}}/v1/payments
+Content-Type: application/json
+
+{
+  "card_number": "2222405343248112",
+  "expiry_month": 12,
+  "expiry_year": 2030,
+  "currency": "USD",
+  "amount": 1,
+  "cvv": "1234"
+}
+
+### Bank error (502): no payment was made, safe to retry
+POST {{gateway}}/v1/payments
+Content-Type: application/json
+
+{
+  "card_number": "2222405343248870",
+  "expiry_month": 4,
+  "expiry_year": 2030,
+  "currency": "EUR",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+### Rejected (400): every invalid field is listed, and the bank is never called
+POST {{gateway}}/v1/payments
+Content-Type: application/json
+
+{
+  "card_number": "1234",
+  "expiry_month": 13,
+  "expiry_year": 2020,
+  "currency": "JPY",
+  "amount": 0,
+  "cvv": "12"
+}
+
+### Rejected (400): the body isn't valid JSON of the expected shape
+POST {{gateway}}/v1/payments
+Content-Type: application/json
+
+{"card_number": "2222405343248877", "amount": 10.5}
+
+### Unknown payment (404)
+GET {{gateway}}/v1/payments/00000000-0000-0000-0000-000000000000
+
+### Malformed payment id (400)
+GET {{gateway}}/v1/payments/not-a-uuid
+
+### Readiness probe
+GET {{gateway}}/actuator/health/readiness
+
+### Prometheus metrics (look for payments_processed_total)
+GET {{gateway}}/actuator/prometheus
