@@ -38,3 +38,18 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### macOS ###
+.DS_Store
+
+### Logs ###
+*.log
+logs/
+
+### Local environment and secrets ###
+.env
+.env.*
+!.env.example
+
+### Claude Code (personal settings; CLAUDE.md stays tracked) ###
+.claude/settings.local.json

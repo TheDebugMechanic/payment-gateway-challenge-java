@@ -95,7 +95,7 @@ Test reports are in `build/reports/tests/`, and coverage in `build/reports/jacoc
 
 | Layer         | Tests                                                     | Checks                                                       |
 |---------------|-----------------------------------------------------------|--------------------------------------------------------------|
-| Unit          | `PostPaymentRequestValidationTest`, `PaymentGatewayServiceTest`, `PaymentsRepositoryTest`, `BankPropertiesTest` | Every rule in the brief at its boundaries, with a fixed clock; outcome mapping; nothing stored on bank failure |
+| Unit          | `PostPaymentRequestValidationTest`, `PaymentRequestBinderTest`, `PaymentGatewayServiceTest`, `PaymentsRepositoryTest`, `BankPropertiesTest` | Every rule in the brief at its boundaries, with a fixed clock; outcome mapping; nothing stored on bank failure |
 | Bank contract | `AcquiringBankClientTest` (WireMock)                      | Exact wire format, decline, 4xx/5xx, timeout, unreachable bank, no retries |
 | HTTP contract | `PaymentGatewayControllerTest` (`@WebFluxTest`)           | Status codes, JSON shape, problem details, card number never echoed |
 | Component     | `PaymentGatewayComponentTest` (full app + WireMock)       | Real wiring and config, trace propagation to the bank, metrics |
@@ -138,7 +138,8 @@ src/main/java/com/checkout/payment/gateway/
   client/         AcquiringBankClient: calls the bank (WebClient), with its settings
   repository/     PaymentsRepository: in-memory storage
   model/          Request, response and stored payment types
-  validation/     Card expiry and currency constraints
+  validation/     PaymentRequestBinder (type-checks and validates the body, reporting every
+                  invalid field at once) and the card expiry and currency constraints
   exception/      Exceptions and CommonExceptionHandler (RFC 9457 problem details)
   enums/          PaymentStatus
   filter/         X-Trace-Id and Cache-Control response headers

@@ -20,7 +20,7 @@ flowchart LR
         direction TB
         filters["<b>filter</b><br/>TraceIdResponseFilter<br/>NoStoreFilter"]
         controller["<b>controller</b><br/>PaymentGatewayController"]
-        validation["<b>validation</b><br/>@NotExpired, @SupportedCurrency"]
+        validation["<b>validation</b><br/>PaymentRequestBinder<br/>@NotExpired, @SupportedCurrency"]
         handler["<b>exception</b><br/>CommonExceptionHandler"]
         service["<b>service</b><br/>PaymentGatewayService"]
         metrics["<b>service</b><br/>PaymentMetrics"]
@@ -30,7 +30,7 @@ flowchart LR
 
     merchant -- "POST /v1/payments<br/>GET /v1/payments/{id}" --> filters
     filters --> controller
-    controller -. validates with .-> validation
+    controller -. binds and validates with .-> validation
     controller -. failures become<br/>problem details .-> handler
     controller -- PaymentCommand --> service
     service --> metrics
@@ -73,8 +73,8 @@ sequenceDiagram
     participant R as PaymentsRepository
 
     M->>C: POST /v1/payments
-    alt request fails validation
-        C-->>M: 400 Rejected (bank never called)
+    alt request fails binding or validation
+        C-->>M: 400 Rejected, every invalid field listed (bank never called)
     else request is valid
         C->>S: processPayment(command)
         S->>B: authorize(command)
@@ -136,6 +136,14 @@ The whole flow is non-blocking ([ADR-0001](adr/0001-reactive-webflux.md)).
 ## Validation rules and assumptions
 
 The brief's rules are implemented as written. Where it left room for interpretation:
+
+**Every invalid field is reported at once.** The controller reads the POST body as raw JSON and
+hands it to `PaymentRequestBinder`, which checks each field's JSON type and then runs Bean
+Validation on the result. Binding straight to the record would stop at the first field of the
+wrong type (for example `"amount": 10.5`) and never check the others. A field of the wrong type is
+reported as such (`must be a string`, `must be a whole number`) and its other rules are skipped;
+all remaining fields are still validated. Text fields must be JSON strings, so a CVV such as `012`
+can't lose its leading zero.
 
 | Field        | Rule                                    | Assumption or reason                                             |
 |--------------|-----------------------------------------|------------------------------------------------------------------|
@@ -222,7 +230,8 @@ it:
 
 | Layer         | Test class                                           | Catches                                                     |
 |---------------|------------------------------------------------------|-------------------------------------------------------------|
-| Unit          | `PostPaymentRequestValidationTest`                   | Each validation rule at its boundaries (14 vs 13 digits, this month vs last month, December to January), against a fixed date |
+| Unit          | `PaymentRequestBinderTest`                           | Wrong-typed fields and failed rules reported together; null, missing and oversized values |
+|               | `PostPaymentRequestValidationTest`                   | Each validation rule at its boundaries (14 vs 13 digits, this month vs last month, December to January), against a fixed date |
 |               | `PaymentGatewayServiceTest`                          | Outcome mapping; a bank failure stores nothing; metrics recorded |
 |               | `PaymentsRepositoryTest`, `BankPropertiesTest`        | Storage semantics; a bad bank URL fails at startup          |
 | Bank contract | `AcquiringBankClientTest` (WireMock)                 | The exact JSON sent to the bank, `MM/YYYY` expiry formatting, each failure mode, and that a failed request is sent **once** |
