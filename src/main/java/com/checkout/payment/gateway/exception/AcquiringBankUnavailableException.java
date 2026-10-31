@@ -5,6 +5,12 @@ package com.checkout.payment.gateway.exception;
  */
 public class AcquiringBankUnavailableException extends RuntimeException {
 
+  /**
+   * Creates the exception.
+   *
+   * @param message what went wrong
+   * @param cause   the underlying failure
+   */
   public AcquiringBankUnavailableException(String message, Throwable cause) {
     super(message, cause);
   }

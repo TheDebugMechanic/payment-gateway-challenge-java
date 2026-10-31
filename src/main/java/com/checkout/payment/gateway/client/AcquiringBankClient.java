@@ -33,6 +33,9 @@ public class AcquiringBankClient {
   /**
    * Takes Spring's {@link WebClient.Builder} so outgoing calls get the same metrics and trace
    * propagation as the rest of the application.
+   *
+   * @param webClientBuilder Spring's builder, which carries the metrics and tracing customizations
+   * @param properties       the bank's base URL and timeouts
    */
   public AcquiringBankClient(WebClient.Builder webClientBuilder, BankProperties properties) {
     HttpClient httpClient = HttpClient.create()
@@ -47,6 +50,7 @@ public class AcquiringBankClient {
   /**
    * Asks the bank to authorize the payment.
    *
+   * @param command the validated payment to authorize
    * @return the bank's decision, or an error: {@link AcquiringBankUnavailableException} when the
    * bank did not process the payment, {@link AcquiringBankTimeoutException} when the outcome is
    * unknown
@@ -62,6 +66,13 @@ public class AcquiringBankClient {
         .onErrorMap(this::translate);
   }
 
+  /**
+   * Maps a low-level failure to the gateway's own exception: a timeout means the outcome is
+   * unknown, while an error response or an unreachable bank means nothing was processed.
+   *
+   * @param error the failure raised by the web client
+   * @return the exception to signal downstream, or {@code error} itself when it is not recognised
+   */
   private Throwable translate(Throwable error) {
     if (error instanceof TimeoutException) {
       LOG.warn("Acquiring bank did not respond within {}", properties.responseTimeout());
@@ -91,6 +102,12 @@ public class AcquiringBankClient {
       @JsonProperty("amount") long amount,
       @JsonProperty("cvv") String cvv) {
 
+    /**
+     * Converts a payment command to the bank's format, writing the expiry as {@code MM/yyyy}.
+     *
+     * @param command the validated payment
+     * @return the request body to send to the bank
+     */
     static BankPaymentRequest from(PaymentCommand command) {
       return new BankPaymentRequest(
           command.cardNumber(),
@@ -100,6 +117,11 @@ public class AcquiringBankClient {
           command.cvv());
     }
 
+    /**
+     * Masks the card number and CVV so the request can be logged safely.
+     *
+     * @return a description without the sensitive fields
+     */
     @Override
     public String toString() {
       return "BankPaymentRequest[cardNumber=****, expiryDate=" + expiryDate

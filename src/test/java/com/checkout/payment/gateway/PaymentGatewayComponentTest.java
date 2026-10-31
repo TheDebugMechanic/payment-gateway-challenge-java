@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.checkout.payment.gateway.model.PaymentResponse;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 @AutoConfigureWebTestClient
 @AutoConfigureMetrics // Spring Boot tests disable metrics export and tracing unless asked
 @AutoConfigureTracing
+@DisplayName("Payment gateway component")
 class PaymentGatewayComponentTest {
 
   @RegisterExtension
@@ -41,6 +43,11 @@ class PaymentGatewayComponentTest {
       .options(wireMockConfig().dynamicPort())
       .build();
 
+  /**
+   * Points the gateway at the WireMock bank.
+   *
+   * @param registry the properties to add to
+   */
   @DynamicPropertySource
   static void bankUrl(DynamicPropertyRegistry registry) {
     registry.add("bank.base-url", bank::baseUrl);
@@ -49,6 +56,7 @@ class PaymentGatewayComponentTest {
   @Autowired
   private WebTestClient client;
 
+  @DisplayName("Processes a payment that can then be retrieved")
   @Test
   void processesAPaymentThatCanThenBeRetrieved() {
     bank.stubFor(post("/payments").willReturn(okJson("""
@@ -71,6 +79,7 @@ class PaymentGatewayComponentTest {
     assertThat(created.cardNumberLastFour()).isEqualTo("8877");
   }
 
+  @DisplayName("Propagates the trace to the bank")
   @Test
   void propagatesTheTraceToTheBank() {
     bank.stubFor(post("/payments").willReturn(okJson("{\"authorized\": false}")));
@@ -89,6 +98,7 @@ class PaymentGatewayComponentTest {
         .withRequestBody(matchingJsonPath("$.card_number", equalTo(AUTHORIZED_CARD))));
   }
 
+  @DisplayName("Documents the API with the field names it accepts")
   @Test
   void documentsTheApiWithTheFieldNamesItAccepts() {
     client.get().uri("/v3/api-docs").exchange()
@@ -99,6 +109,7 @@ class PaymentGatewayComponentTest {
         .jsonPath("$.components.schemas.PaymentResponse.properties.card_number_last_four").exists();
   }
 
+  @DisplayName("Exposes health and payment metrics")
   @Test
   void exposesHealthAndPaymentMetrics() {
     client.get().uri("/actuator/health/readiness").exchange()

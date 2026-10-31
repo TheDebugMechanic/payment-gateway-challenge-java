@@ -13,6 +13,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+/**
+ * Runs the payment flow: authorize with the bank, store the result and record metrics.
+ */
 @Service
 public class PaymentGatewayService {
 
@@ -22,6 +25,13 @@ public class PaymentGatewayService {
   private final PaymentsRepository repository;
   private final PaymentMetrics metrics;
 
+  /**
+   * Creates the service.
+   *
+   * @param bankClient the acquiring bank client
+   * @param repository where payments are stored
+   * @param metrics    records payment outcomes and bank failures
+   */
   public PaymentGatewayService(AcquiringBankClient bankClient, PaymentsRepository repository,
       PaymentMetrics metrics) {
     this.bankClient = bankClient;
@@ -32,6 +42,9 @@ public class PaymentGatewayService {
   /**
    * Sends a validated payment to the bank and stores the result. If the bank fails, the error is
    * passed on and nothing is stored, because no payment was made (or its outcome is unknown).
+   *
+   * @param command the validated payment
+   * @return the stored payment, or an error when the bank failed
    */
   public Mono<Payment> processPayment(PaymentCommand command) {
     return bankClient.authorize(command)
@@ -43,16 +56,30 @@ public class PaymentGatewayService {
 
   /**
    * Emits the payment, or a {@link PaymentNotFoundException} when no payment has that id.
+   *
+   * @param id the payment's id
+   * @return the payment, or a not-found error
    */
   public Mono<Payment> getPaymentById(UUID id) {
     return repository.get(id)
         .switchIfEmpty(Mono.error(() -> new PaymentNotFoundException(id)));
   }
 
+  /**
+   * Maps the bank's decision to a payment status.
+   *
+   * @param authorization the bank's decision
+   * @return {@link PaymentStatus#AUTHORIZED} or {@link PaymentStatus#DECLINED}
+   */
   private static PaymentStatus statusOf(BankAuthorization authorization) {
     return authorization.authorized() ? PaymentStatus.AUTHORIZED : PaymentStatus.DECLINED;
   }
 
+  /**
+   * Counts the outcome and logs it, with only the last four card digits.
+   *
+   * @param payment the stored payment
+   */
   private void recordOutcome(Payment payment) {
     metrics.recordOutcome(payment.status());
     LOG.atInfo()

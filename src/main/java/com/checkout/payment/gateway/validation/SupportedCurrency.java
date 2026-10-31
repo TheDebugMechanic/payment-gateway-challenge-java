@@ -23,9 +23,24 @@ import java.lang.annotation.Target;
 @Pattern(regexp = "USD|GBP|EUR")
 public @interface SupportedCurrency {
 
+  /**
+   * The message reported when the currency is not supported.
+   *
+   * @return the message template
+   */
   String message() default "must be one of USD, GBP, EUR";
 
+  /**
+   * The validation groups this constraint belongs to.
+   *
+   * @return the groups
+   */
   Class<?>[] groups() default {};
 
+  /**
+   * Extra metadata for clients of the validation API.
+   *
+   * @return the payload types
+   */
   Class<? extends Payload>[] payload() default {};
 }

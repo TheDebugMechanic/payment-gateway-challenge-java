@@ -18,9 +18,24 @@ import java.lang.annotation.Target;
 @Constraint(validatedBy = NotExpiredValidator.class)
 public @interface NotExpired {
 
+  /**
+   * The message reported when the card has expired.
+   *
+   * @return the message template
+   */
   String message() default "card has expired";
 
+  /**
+   * The validation groups this constraint belongs to.
+   *
+   * @return the groups
+   */
   Class<?>[] groups() default {};
 
+  /**
+   * Extra metadata for clients of the validation API.
+   *
+   * @return the payload types
+   */
   Class<? extends Payload>[] payload() default {};
 }

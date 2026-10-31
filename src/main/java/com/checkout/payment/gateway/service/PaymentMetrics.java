@@ -18,6 +18,11 @@ public class PaymentMetrics {
   private final Map<PaymentStatus, Counter> outcomes = new EnumMap<>(PaymentStatus.class);
   private final Counter bankFailures;
 
+  /**
+   * Registers the counters.
+   *
+   * @param registry where the counters are registered
+   */
   public PaymentMetrics(MeterRegistry registry) {
     for (PaymentStatus status : PaymentStatus.values()) {
       outcomes.put(status, Counter.builder("payments.processed")
@@ -30,10 +35,18 @@ public class PaymentMetrics {
         .register(registry);
   }
 
+  /**
+   * Counts a payment request that ended with the given outcome.
+   *
+   * @param status the outcome
+   */
   public void recordOutcome(PaymentStatus status) {
     outcomes.get(status).increment();
   }
 
+  /**
+   * Counts a payment request that failed because the bank errored or timed out.
+   */
   public void recordBankFailure() {
     bankFailures.increment();
   }

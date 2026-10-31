@@ -17,6 +17,12 @@ public class PaymentsRepository {
 
   private final Map<UUID, Payment> payments = new ConcurrentHashMap<>();
 
+  /**
+   * Stores a payment, replacing any payment with the same id.
+   *
+   * @param payment the payment to store
+   * @return the stored payment
+   */
   public Mono<Payment> add(Payment payment) {
     return Mono.fromSupplier(() -> {
       payments.put(payment.id(), payment);
@@ -26,6 +32,9 @@ public class PaymentsRepository {
 
   /**
    * Emits the payment, or completes empty when no payment has that id.
+   *
+   * @param id the payment's id
+   * @return the payment, or an empty {@link Mono}
    */
   public Mono<Payment> get(UUID id) {
     return Mono.fromSupplier(() -> payments.get(id));

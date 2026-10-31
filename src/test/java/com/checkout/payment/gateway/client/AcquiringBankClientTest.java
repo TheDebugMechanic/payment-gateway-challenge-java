@@ -17,6 +17,7 @@ import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import java.net.URI;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -27,6 +28,7 @@ import reactor.test.StepVerifier;
 /**
  * Pins the bank's wire contract and how each kind of bank failure is reported.
  */
+@DisplayName("Acquiring bank client")
 class AcquiringBankClientTest {
 
   /**
@@ -41,11 +43,15 @@ class AcquiringBankClientTest {
 
   private AcquiringBankClient client;
 
+  /**
+   * Builds a client that talks to the WireMock bank.
+   */
   @BeforeEach
   void setUp() {
     client = clientFor(URI.create(bank.baseUrl()));
   }
 
+  @DisplayName("Sends the card details in the bank's format")
   @Test
   void sendsTheCardDetailsInTheBanksFormat() {
     bank.stubFor(post("/payments").willReturn(okJson("""
@@ -65,6 +71,7 @@ class AcquiringBankClientTest {
         }""")));
   }
 
+  @DisplayName("Pads single digit months in the expiry date")
   @Test
   void padsSingleDigitMonthsInTheExpiryDate() {
     bank.stubFor(post("/payments").willReturn(okJson("{\"authorized\": true}")));
@@ -81,6 +88,7 @@ class AcquiringBankClientTest {
         .withRequestBody(equalToJson("{\"expiry_date\": \"01/2030\"}", true, true)));
   }
 
+  @DisplayName("Reports a decline")
   @Test
   void reportsADecline() {
     bank.stubFor(post("/payments").willReturn(okJson("""
@@ -91,6 +99,7 @@ class AcquiringBankClientTest {
         .verifyComplete();
   }
 
+  @DisplayName("Reports an error response as unavailable and does not retry")
   @ParameterizedTest
   @ValueSource(ints = {400, 500, 503})
   void reportsAnErrorResponseAsUnavailableAndDoesNotRetry(int status) {
@@ -102,6 +111,7 @@ class AcquiringBankClientTest {
     bank.verify(1, postRequestedFor(urlEqualTo("/payments")));
   }
 
+  @DisplayName("Reports a slow response as a timeout")
   @Test
   void reportsASlowResponseAsATimeout() {
     bank.stubFor(post("/payments").willReturn(okJson("{\"authorized\": true}")
@@ -112,6 +122,7 @@ class AcquiringBankClientTest {
         .verifyError(AcquiringBankTimeoutException.class);
   }
 
+  @DisplayName("Reports an unreachable bank as unavailable")
   @Test
   void reportsAnUnreachableBankAsUnavailable() {
     AcquiringBankClient unreachable = clientFor(URI.create("http://localhost:1"));
@@ -120,10 +131,23 @@ class AcquiringBankClientTest {
         .verifyError(AcquiringBankUnavailableException.class);
   }
 
+  /**
+   * A client with the default, generous response timeout.
+   *
+   * @param baseUrl the bank's URL
+   * @return the client
+   */
   private static AcquiringBankClient clientFor(URI baseUrl) {
     return clientFor(baseUrl, RESPONSE_TIMEOUT);
   }
 
+  /**
+   * A client with the given response timeout.
+   *
+   * @param baseUrl         the bank's URL
+   * @param responseTimeout how long to wait for the bank
+   * @return the client
+   */
   private static AcquiringBankClient clientFor(URI baseUrl, Duration responseTimeout) {
     return new AcquiringBankClient(WebClient.builder(),
         new BankProperties(baseUrl, Duration.ofMillis(500), responseTimeout));

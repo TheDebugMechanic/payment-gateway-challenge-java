@@ -6,6 +6,12 @@ package com.checkout.payment.gateway.exception;
  */
 public class AcquiringBankTimeoutException extends RuntimeException {
 
+  /**
+   * Creates the exception.
+   *
+   * @param message what went wrong
+   * @param cause   the underlying timeout
+   */
   public AcquiringBankTimeoutException(String message, Throwable cause) {
     super(message, cause);
   }

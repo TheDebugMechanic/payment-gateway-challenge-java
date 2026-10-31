@@ -17,6 +17,13 @@ public class NoStoreFilter implements WebFilter {
 
   private static final String PAYMENTS_PATH = "/v1/payments";
 
+  /**
+   * Adds {@code Cache-Control: no-store} to responses under {@code /v1/payments}.
+   *
+   * @param exchange the current exchange
+   * @param chain    the rest of the filter chain
+   * @return completes when the rest of the chain has completed
+   */
   @Override
   public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
     if (exchange.getRequest().getPath().value().startsWith(PAYMENTS_PATH)) {

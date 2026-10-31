@@ -19,10 +19,22 @@ public class TraceIdResponseFilter implements WebFilter {
 
   private final Tracer tracer;
 
+  /**
+   * Creates the filter.
+   *
+   * @param tracer the tracer that knows the current span
+   */
   public TraceIdResponseFilter(Tracer tracer) {
     this.tracer = tracer;
   }
 
+  /**
+   * Adds the current trace id to the response headers, when there is a trace.
+   *
+   * @param exchange the current exchange
+   * @param chain    the rest of the filter chain
+   * @return completes when the rest of the chain has completed
+   */
   @Override
   public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
     Span span = tracer.currentSpan();

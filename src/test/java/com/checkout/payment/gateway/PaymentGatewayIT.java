@@ -5,6 +5,7 @@ import static com.checkout.payment.gateway.TestPayments.BANK_ERROR_CARD;
 import static com.checkout.payment.gateway.TestPayments.DECLINED_CARD;
 
 import com.checkout.payment.gateway.model.PaymentResponse;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -24,11 +25,12 @@ import org.testcontainers.utility.MountableFile;
 
 /**
  * End to end against the real bank simulator (the same Mountebank image and imposters as
- * docker-compose.yml). Needs Docker; runs in {@code ./mvnw verify}.
+ * docker-compose.yml). Needs Docker; runs in {@code ./gradlew check}.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
+@DisplayName("Payment gateway end to end")
 class PaymentGatewayIT {
 
   private static final int BANK_PORT = 8080;
@@ -41,6 +43,11 @@ class PaymentGatewayIT {
       .withExposedPorts(BANK_PORT)
       .waitingFor(Wait.forLogMessage(".*Bank simulator\\] Open for business.*", 1));
 
+  /**
+   * Points the gateway at the simulator container's mapped port.
+   *
+   * @param registry the properties to add to
+   */
   @DynamicPropertySource
   static void bankUrl(DynamicPropertyRegistry registry) {
     registry.add("bank.base-url", () -> "http://%s:%d".formatted(
@@ -50,6 +57,7 @@ class PaymentGatewayIT {
   @Autowired
   private WebTestClient client;
 
+  @DisplayName("Stores the bank's decision so it can be retrieved")
   @ParameterizedTest(name = "card ending {0} is {1}")
   @CsvSource({AUTHORIZED_CARD + ", Authorized", DECLINED_CARD + ", Declined"})
   void storesTheBanksDecisionSoItCanBeRetrieved(String cardNumber, String expectedStatus) {
@@ -65,6 +73,7 @@ class PaymentGatewayIT {
         .jsonPath("$.card_number_last_four").isEqualTo(cardNumber.substring(12));
   }
 
+  @DisplayName("Reports a bank error as bad gateway")
   @Test
   void reportsABankErrorAsBadGateway() {
     submit(BANK_ERROR_CARD)
@@ -72,6 +81,7 @@ class PaymentGatewayIT {
         .expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON);
   }
 
+  @DisplayName("Rejects an invalid payment")
   @Test
   void rejectsAnInvalidPayment() {
     client.post().uri("/v1/payments")
@@ -83,6 +93,12 @@ class PaymentGatewayIT {
         .jsonPath("$.payment_status").isEqualTo("Rejected");
   }
 
+  /**
+   * Posts a valid payment for the given card.
+   *
+   * @param cardNumber the card to charge
+   * @return the gateway's response
+   */
   private WebTestClient.ResponseSpec submit(String cardNumber) {
     return client.post().uri("/v1/payments")
         .contentType(MediaType.APPLICATION_JSON)

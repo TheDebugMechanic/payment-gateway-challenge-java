@@ -5,7 +5,17 @@ package com.checkout.payment.gateway.validation;
  */
 public interface CardExpiry {
 
+  /**
+   * The expiry month.
+   *
+   * @return the month, 1-12, or {@code null} when missing
+   */
   Integer expiryMonth();
 
+  /**
+   * The expiry year.
+   *
+   * @return the year, or {@code null} when missing
+   */
   Integer expiryYear();
 }
