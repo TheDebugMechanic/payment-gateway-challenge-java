@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
@@ -13,6 +14,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.JsonNode;
 
 /**
  * The payments API's OpenAPI documentation, kept apart from {@link PaymentGatewayController} so the
@@ -21,8 +23,16 @@ import reactor.core.publisher.Mono;
 @Tag(name = "Payments")
 public interface PaymentGatewayApi {
 
+  /** Media type of error responses (RFC 9457). */
   String PROBLEM_JSON = "application/problem+json";
 
+  /**
+   * Processes a card payment.
+   *
+   * @param body       the merchant's payment request, shaped like {@link PostPaymentRequest}
+   * @param uriBuilder builds the {@code Location} header of the created payment
+   * @return {@code 201} with the payment, whether the bank authorized or declined it
+   */
   @Operation(summary = "Process a card payment",
       description = "Validates the card details and asks the acquiring bank to authorize the "
           + "payment. Invalid requests are rejected without calling the bank.")
@@ -39,9 +49,17 @@ public interface PaymentGatewayApi {
       description = "The bank did not respond in time; the payment outcome is unknown",
       content = @Content(mediaType = PROBLEM_JSON,
           schema = @Schema(implementation = ProblemDetail.class)))
-  Mono<ResponseEntity<PaymentResponse>> process(PostPaymentRequest request,
+  Mono<ResponseEntity<PaymentResponse>> process(
+      @RequestBody(required = true, content = @Content(
+          schema = @Schema(implementation = PostPaymentRequest.class))) JsonNode body,
       @Parameter(hidden = true) UriComponentsBuilder uriBuilder);
 
+  /**
+   * Retrieves a previously processed payment.
+   *
+   * @param id the payment's id
+   * @return the payment
+   */
   @Operation(summary = "Retrieve a previously processed payment")
   @ApiResponse(responseCode = "200", description = "The payment")
   @ApiResponse(responseCode = "404", description = "No payment has this id",

@@ -14,10 +14,12 @@ import com.checkout.payment.gateway.exception.PaymentNotFoundException;
 import com.checkout.payment.gateway.model.Payment;
 import com.checkout.payment.gateway.service.PaymentGatewayService;
 import com.checkout.payment.gateway.service.PaymentMetrics;
+import com.checkout.payment.gateway.validation.PaymentRequestBinder;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.tracing.Tracer;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -38,8 +40,9 @@ import reactor.core.publisher.Mono;
  * The HTTP contract: status codes, JSON shape and error bodies. The service is mocked.
  */
 @WebFluxTest(PaymentGatewayController.class)
-@Import({ApplicationConfiguration.class, PaymentMetrics.class,
+@Import({ApplicationConfiguration.class, PaymentMetrics.class, PaymentRequestBinder.class,
     PaymentGatewayControllerTest.Observability.class})
+@DisplayName("Payment gateway controller")
 class PaymentGatewayControllerTest {
 
   private static final String VALID_REQUEST = """
@@ -59,6 +62,7 @@ class PaymentGatewayControllerTest {
   private PaymentGatewayService paymentService;
 
   @Nested
+  @DisplayName("POST /v1/payments")
   class ProcessPayment {
 
     @ParameterizedTest
@@ -83,6 +87,7 @@ class PaymentGatewayControllerTest {
           .jsonPath("$.cvv").doesNotExist();
     }
 
+    @DisplayName("Rejects invalid fields without calling the bank")
     @Test
     void rejectsInvalidFieldsWithoutCallingTheBank() {
       post("""
@@ -102,23 +107,105 @@ class PaymentGatewayControllerTest {
       verifyNoInteractions(paymentService);
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {
-        "{not json",
-        "",
-        "{\"card_number\": \"2222405343248877\", \"expiry_month\": 4, \"expiry_year\": 2099,"
-            + " \"currency\": \"GBP\", \"amount\": 10.5, \"cvv\": \"123\"}",
-        "{\"card_number\": \"2222405343248877\", \"expiry_month\": \"April\","
-            + " \"expiry_year\": 2099, \"currency\": \"GBP\", \"amount\": 1, \"cvv\": \"123\"}"})
-    void rejectsABodyThatCannotBeRead(String body) {
-      post(body)
+    @DisplayName("Names the field when a decimal is sent for the whole-number amount")
+    @Test
+    void namesTheFieldForADecimalAmount() {
+      post(VALID_REQUEST.replace("1050", "10.5"))
           .expectStatus().isBadRequest()
           .expectBody()
-          .jsonPath("$.payment_status").isEqualTo("Rejected");
+          .jsonPath("$.payment_status").isEqualTo("Rejected")
+          .jsonPath("$.detail").isEqualTo("One or more fields are invalid")
+          .jsonPath("$.errors[0].field").isEqualTo("amount")
+          .jsonPath("$.errors[0].message").isEqualTo("must be a whole number");
 
       verifyNoInteractions(paymentService);
     }
 
+    @DisplayName("Names the field when text is sent for the whole-number expiry month")
+    @Test
+    void namesTheFieldForATextExpiryMonth() {
+      post(VALID_REQUEST.replace("\"expiry_month\": 4", "\"expiry_month\": \"April\""))
+          .expectStatus().isBadRequest()
+          .expectBody()
+          .jsonPath("$.errors[0].field").isEqualTo("expiry_month")
+          .jsonPath("$.errors[0].message").isEqualTo("must be a whole number");
+
+      verifyNoInteractions(paymentService);
+    }
+
+    @DisplayName("Reports every invalid field together with a decimal amount")
+    @Test
+    void reportsEveryInvalidFieldTogetherWithADecimalAmount() {
+      post("""
+          {"card_number": "123", "expiry_month": 4, "expiry_year": 2099,
+           "currency": "JPY", "amount": 10.5, "cvv": "1"}""")
+          .expectStatus().isBadRequest()
+          .expectBody()
+          .jsonPath("$.errors[*].field")
+          .isEqualTo(java.util.List.of("amount", "card_number", "currency", "cvv"));
+
+      verifyNoInteractions(paymentService);
+    }
+
+    @DisplayName("Reports every wrongly typed field and every failed rule in one response")
+    @Test
+    void reportsEveryWronglyTypedFieldAndFailedRule() {
+      post("""
+          {"card_number": 2222405343248877, "expiry_month": "April", "expiry_year": 20.5,
+           "currency": "JPY", "amount": "ten", "cvv": "1"}""")
+          .expectStatus().isBadRequest()
+          .expectBody()
+          .jsonPath("$.errors[?(@.field=='card_number')].message").isEqualTo("must be a string")
+          .jsonPath("$.errors[?(@.field=='expiry_month')].message")
+          .isEqualTo("must be a whole number")
+          .jsonPath("$.errors[?(@.field=='expiry_year')].message")
+          .isEqualTo("must be a whole number")
+          .jsonPath("$.errors[?(@.field=='amount')].message").isEqualTo("must be a whole number")
+          .jsonPath("$.errors[?(@.field=='currency')].message")
+          .isEqualTo("must be one of USD, GBP, EUR")
+          .jsonPath("$.errors[?(@.field=='cvv')].message").isEqualTo("must be 3-4 digits")
+          .jsonPath("$.errors.length()").isEqualTo(6);
+
+      verifyNoInteractions(paymentService);
+    }
+
+    @DisplayName("Rejects a body that is not a JSON object")
+    @Test
+    void rejectsABodyThatIsNotAJsonObject() {
+      post("[1, 2]")
+          .expectStatus().isBadRequest()
+          .expectBody()
+          .jsonPath("$.payment_status").isEqualTo("Rejected")
+          .jsonPath("$.errors[0].field").isEqualTo("body");
+
+      verifyNoInteractions(paymentService);
+    }
+
+    @DisplayName("Says when the body is not valid JSON")
+    @Test
+    void saysWhenTheBodyIsNotValidJson() {
+      post("{not json")
+          .expectStatus().isBadRequest()
+          .expectBody()
+          .jsonPath("$.payment_status").isEqualTo("Rejected")
+          .jsonPath("$.detail").isEqualTo("The request body is not valid JSON");
+
+      verifyNoInteractions(paymentService);
+    }
+
+    @DisplayName("Says when the body is missing")
+    @Test
+    void saysWhenTheBodyIsMissing() {
+      post("")
+          .expectStatus().isBadRequest()
+          .expectBody()
+          .jsonPath("$.payment_status").isEqualTo("Rejected")
+          .jsonPath("$.detail").isEqualTo("The request body is missing");
+
+      verifyNoInteractions(paymentService);
+    }
+
+    @DisplayName("Returns 502 when the bank cannot process the payment")
     @Test
     void returns502WhenTheBankCannotProcessThePayment() {
       when(paymentService.processPayment(any())).thenReturn(
@@ -132,6 +219,7 @@ class PaymentGatewayControllerTest {
           .jsonPath("$.payment_status").doesNotExist();
     }
 
+    @DisplayName("Returns 504 when the bank outcome is unknown")
     @Test
     void returns504WhenTheBankOutcomeIsUnknown() {
       when(paymentService.processPayment(any())).thenReturn(
@@ -143,6 +231,7 @@ class PaymentGatewayControllerTest {
           .jsonPath("$.title").isEqualTo("Acquiring bank timeout");
     }
 
+    @DisplayName("Never echoes the card number in an error")
     @Test
     void neverEchoesTheCardNumberInAnError() {
       post(VALID_REQUEST.replace("\"cvv\": \"123\"", "\"cvv\": \"12\""))
@@ -152,6 +241,12 @@ class PaymentGatewayControllerTest {
               .doesNotContain(AUTHORIZED_CARD));
     }
 
+    /**
+     * Posts a body to the payments endpoint.
+     *
+     * @param body the raw request body
+     * @return the response
+     */
     private ResponseSpec post(String body) {
       return client.post().uri("/v1/payments")
           .contentType(MediaType.APPLICATION_JSON)
@@ -161,6 +256,7 @@ class PaymentGatewayControllerTest {
   }
 
   @Nested
+  @DisplayName("GET /v1/payments/{id}")
   class RetrievePayment {
 
     @Test
@@ -177,6 +273,7 @@ class PaymentGatewayControllerTest {
           .jsonPath("$.card_number_last_four").isEqualTo("8877");
     }
 
+    @DisplayName("Returns 404 for an unknown id")
     @Test
     void returns404ForAnUnknownId() {
       UUID id = UUID.randomUUID();
@@ -191,6 +288,7 @@ class PaymentGatewayControllerTest {
           .jsonPath("$.detail").isEqualTo("Payment " + id + " was not found");
     }
 
+    @DisplayName("Returns 400 for a malformed id")
     @Test
     void returns400ForAMalformedId() {
       client.get().uri("/v1/payments/not-a-uuid").exchange()
@@ -202,14 +300,27 @@ class PaymentGatewayControllerTest {
     }
   }
 
+  /**
+   * Metrics and tracing beans that the slice test does not load by itself.
+   */
   @TestConfiguration
   static class Observability {
 
+    /**
+     * An in-memory registry.
+     *
+     * @return the registry
+     */
     @Bean
     MeterRegistry meterRegistry() {
       return new SimpleMeterRegistry();
     }
 
+    /**
+     * A tracer that records nothing.
+     *
+     * @return the no-op tracer
+     */
     @Bean
     Tracer tracer() {
       return Tracer.NOOP;

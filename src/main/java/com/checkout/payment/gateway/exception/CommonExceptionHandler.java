@@ -4,13 +4,12 @@ import com.checkout.payment.gateway.enums.PaymentStatus;
 import com.checkout.payment.gateway.service.PaymentMetrics;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
+import tools.jackson.core.exc.StreamReadException;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.bind.support.WebExchangeBindException;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.ServerWebInputException;
 
@@ -22,18 +21,24 @@ public class CommonExceptionHandler {
 
   private final PaymentMetrics metrics;
 
+  /**
+   * Creates the handler.
+   *
+   * @param metrics records rejected requests
+   */
   public CommonExceptionHandler(PaymentMetrics metrics) {
     this.metrics = metrics;
   }
 
   /**
-   * A field failed validation.
+   * One or more fields have the wrong type or failed validation.
+   *
+   * @param ex the failure, which carries every invalid field
+   * @return a {@code 400} problem listing every invalid field
    */
-  @ExceptionHandler(WebExchangeBindException.class)
-  public ProblemDetail handleInvalidRequest(WebExchangeBindException ex) {
-    List<FieldError> errors = ex.getFieldErrors().stream()
-        .map(error -> new FieldError(toSnakeCase(error.getField()),
-            error.getDefaultMessage()))
+  @ExceptionHandler(InvalidPaymentRequestException.class)
+  public ProblemDetail handleInvalidRequest(InvalidPaymentRequestException ex) {
+    List<FieldError> errors = ex.errors().stream()
         .sorted(Comparator.comparing(FieldError::field).thenComparing(FieldError::message))
         .toList();
     ProblemDetail problem = rejected("One or more fields are invalid");
@@ -43,21 +48,42 @@ public class CommonExceptionHandler {
 
   /**
    * The body is missing or isn't valid JSON, or a path variable has the wrong type.
+   *
+   * @param ex       the failure to read the input
+   * @param exchange the current request, used to tell a payment POST from other requests
+   * @return a {@code 400} problem
    */
   @ExceptionHandler(ServerWebInputException.class)
   public ProblemDetail handleUnreadableRequest(ServerWebInputException ex,
       ServerWebExchange exchange) {
-    if (HttpMethod.POST.equals(exchange.getRequest().getMethod())) {
-      return rejected("The request body is missing or is not valid JSON of the expected shape");
+    if (!HttpMethod.POST.equals(exchange.getRequest().getMethod())) {
+      return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getReason());
     }
-    return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getReason());
+    for (Throwable cause = ex.getCause(); cause != null; cause = cause.getCause()) {
+      if (cause instanceof StreamReadException) {
+        return rejected("The request body is not valid JSON");
+      }
+    }
+    return rejected("The request body is missing");
   }
 
+  /**
+   * No payment has the requested id.
+   *
+   * @param ex the not-found failure
+   * @return a {@code 404} problem
+   */
   @ExceptionHandler(PaymentNotFoundException.class)
   public ProblemDetail handleNotFound(PaymentNotFoundException ex) {
     return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
   }
 
+  /**
+   * The bank failed, so no payment was made and it is safe to try again.
+   *
+   * @param ex the bank failure
+   * @return a {@code 502} problem
+   */
   @ExceptionHandler(AcquiringBankUnavailableException.class)
   public ProblemDetail handleBankUnavailable(AcquiringBankUnavailableException ex) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY,
@@ -67,6 +93,12 @@ public class CommonExceptionHandler {
     return problem;
   }
 
+  /**
+   * The bank did not answer in time, so the payment outcome is unknown.
+   *
+   * @param ex the timeout
+   * @return a {@code 504} problem
+   */
   @ExceptionHandler(AcquiringBankTimeoutException.class)
   public ProblemDetail handleBankTimeout(AcquiringBankTimeoutException ex) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.GATEWAY_TIMEOUT,
@@ -76,6 +108,12 @@ public class CommonExceptionHandler {
     return problem;
   }
 
+  /**
+   * Builds the {@code 400} problem for a rejected payment and counts it in the metrics.
+   *
+   * @param detail the human-readable explanation
+   * @return the problem detail
+   */
   private ProblemDetail rejected(String detail) {
     metrics.recordOutcome(PaymentStatus.REJECTED);
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
@@ -83,16 +121,5 @@ public class CommonExceptionHandler {
     // "status" is the HTTP status in a problem detail, so the payment outcome needs its own key.
     problem.setProperty("payment_status", PaymentStatus.REJECTED);
     return problem;
-  }
-
-  /**
-   * Reports fields by their JSON names (expiry_month), not their Java names (expiryMonth).
-   */
-  private static String toSnakeCase(String field) {
-    return field.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
-  }
-
-  record FieldError(String field, String message) {
-
   }
 }

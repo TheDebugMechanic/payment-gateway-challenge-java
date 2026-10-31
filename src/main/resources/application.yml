@@ -3,9 +3,6 @@ spring:
     name: payment-gateway
   jackson:
     property-naming-strategy: SNAKE_CASE
-    deserialization:
-      # Reject 10.5 for an integer amount instead of silently truncating it to 10.
-      accept-float-as-int: false
   reactor:
     # Carries the trace context (and so traceId/spanId in logs) across Reactor thread hops.
     context-propagation: auto

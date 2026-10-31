@@ -14,6 +14,15 @@ import jakarta.validation.constraints.Positive;
 /**
  * A merchant's request to charge a card. Fields are boxed so a missing value reaches validation as
  * {@code null} and is reported as "must not be null" instead of defaulting to zero.
+ * Built by {@code PaymentRequestBinder}, which reports wrong-typed fields together with the
+ * validation failures.
+ *
+ * @param cardNumber  the full card number, 14-19 digits
+ * @param expiryMonth the card's expiry month, 1-12
+ * @param expiryYear  the card's expiry year
+ * @param currency    the ISO 4217 currency code: USD, GBP or EUR
+ * @param amount      the amount in the currency's minor unit
+ * @param cvv         the card verification value, 3-4 digits
  */
 @NotExpired
 public record PostPaymentRequest(
@@ -43,11 +52,18 @@ public record PostPaymentRequest(
 
   /**
    * Only call on a request that passed validation.
+   *
+   * @return the command to hand to the payment service
    */
   public PaymentCommand toCommand() {
     return new PaymentCommand(cardNumber, expiryMonth, expiryYear, currency, amount, cvv);
   }
 
+  /**
+   * Masks the card number and CVV so the request can be logged.
+   *
+   * @return a description without the sensitive fields
+   */
   @Override
   public String toString() {
     return "PostPaymentRequest[cardNumber=****, expiryMonth=" + expiryMonth
